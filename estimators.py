@@ -13,6 +13,7 @@ class CMBEstimator:
     """
     CMB and thao_0 esimator for data without a satelite.
     """
+
     def __init__(self, angles: np.ndarray, powers: np.ndarray) -> None:
         """
         A way of instantiating the estimator.
@@ -79,7 +80,8 @@ class CMBEstimator:
         data_y: np.ndarray,
         popt: list[float],
         pcov_diag: list[float],
-        slicing: int | None
+        slicing: int | None,
+        title: str = "Data from Kapteyn Radio Telescope with the fitted model",
     ):
         """
         Plots the fitted model.
@@ -119,7 +121,7 @@ class CMBEstimator:
         ax.scatter(
             data_x, data_y, label="Data from Kapteyn Radio Telescope", color="blue"
         )
-        ax.set_title("Data from Kapteyn Radio Telescope with the fitted model")
+        ax.set_title(title)
         ax.set_xlabel("Andles (deg)")
         ax.set_ylabel("Power (watt)")
         ax.legend()
@@ -246,8 +248,8 @@ class CMBEstimator:
         guesses: list[float],
         angles: np.ndarray,
         t_ant: np.ndarray,
-        method="dogbox"
-    ) -> tuple[list[float],list[float]]:
+        method="dogbox",
+    ) -> tuple[list[float], list[float]]:
         """
         This function is used to fit the model using initial guesses,
         the angles of observation and the antena temperature at each
@@ -278,6 +280,7 @@ class CMBEstimatorWithSatelite(CMBEstimator):
     """
     CMB and thao_0 esimator for data with a satelite.
     """
+
     def get_estimate(
         self,
         initial_guesses_antena: list[float],
@@ -301,33 +304,48 @@ class CMBEstimatorWithSatelite(CMBEstimator):
         t_ant, _, _ = self._get_relevant_temperatures(powers)
 
         # Make an initial antena fit on the sliced data
-        popt, pcov_diag = self._antena_fit(initial_guesses_antena, angles, t_ant, slicing)
+        popt, pcov_diag = self._antena_fit(
+            initial_guesses_antena,
+            angles,
+            t_ant,
+            slicing,
+            title="Data from Kapteyn Radio Telescope with the itital antena model\n(before satelite data removal)",
+        )
 
         # Remove antena signal
         modeled_values = self._antena_model(angles, *popt)
         t_ant_decreased = t_ant - modeled_values
 
         # Fit a gaussian to the reduced antena temperature to model the satelite
-        popt_gauss, _ = self._gaussian_fit(initial_guesses_gaussian, angles, t_ant_decreased, t_ant)
+        popt_gauss, _ = self._gaussian_fit(
+            initial_guesses_gaussian, angles, t_ant_decreased, t_ant
+        )
 
         # Remove the contributions from the satelite from the initial data
         modeled_values = self._gaussian_model(angles, *popt_gauss)
         t_ant -= modeled_values
 
-        popt, pcov_diag = self._antena_fit(initial_guesses_antena, angles, t_ant, slicing)
+        popt, pcov_diag = self._antena_fit(
+            initial_guesses_antena,
+            angles,
+            t_ant,
+            slicing,
+            title="Data from Kapteyn Radio Telescope with the antena model\n(after satelite data removal)",
+        )
 
         # Get the final results for the T_cmb and thao_0 with their uncertainties
         t_cmb = tuple((popt[0], pcov_diag[0]))
         thao_0 = tuple((popt[1], pcov_diag[1]))
 
         return t_cmb, thao_0
-    
+
     def _antena_fit(
-            self,
-            initial_guesses_antena: list[float],
-            angles: np.ndarray,
-            t_ant: np.ndarray,
-            slicing: int
+        self,
+        initial_guesses_antena: list[float],
+        angles: np.ndarray,
+        t_ant: np.ndarray,
+        slicing: int,
+        title: str,
     ) -> list[float]:
         """
         Makes an initial antena fit by removing the ignoring the data points
@@ -341,6 +359,8 @@ class CMBEstimatorWithSatelite(CMBEstimator):
         :type t_ant: np.ndarray
         :param slicing: the slicing of the data
         :type slicing: int
+        :param title: the title of the plot
+        :type title: str
         :return: the result from the fit
         :rtype: list[float]
         """
@@ -353,16 +373,16 @@ class CMBEstimatorWithSatelite(CMBEstimator):
         )
 
         # Plot the antena fit
-        self._plot_fit(self._antena_model, t_ant, popt, pcov_diag, slicing)
+        self._plot_fit(self._antena_model, t_ant, popt, pcov_diag, slicing, title)
 
         return popt, pcov_diag
-    
+
     def _gaussian_fit(
-            self,
-            initial_guesses_gaussian: list[float],
-            angles: np.ndarray,
-            t_ant_decreased: np.ndarray,
-            t_ant: np.ndarray
+        self,
+        initial_guesses_gaussian: list[float],
+        angles: np.ndarray,
+        t_ant_decreased: np.ndarray,
+        t_ant: np.ndarray,
     ) -> list[float]:
         """
         Perform the gaussian fit used to model the satelite contribution
@@ -422,7 +442,7 @@ class CMBEstimatorWithSatelite(CMBEstimator):
         ax.scatter(
             data_x, data_y, label="Data from Kapteyn Radio Telescope", color="blue"
         )
-        ax.set_title("Data from Kapteyn Radio Telescope with the fitted model")
+        ax.set_title("Data from Kapteyn Radio Telescope with the fitted Gaussian model")
         ax.set_xlabel("Andles (deg)")
         ax.set_ylabel("Power (watt)")
         ax.legend()

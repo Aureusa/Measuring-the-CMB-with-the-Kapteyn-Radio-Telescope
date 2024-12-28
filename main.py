@@ -27,5 +27,5 @@ def main_satelite():
 
 
 if __name__ == "__main__":
-    main()
+    #main()
     main_satelite()
