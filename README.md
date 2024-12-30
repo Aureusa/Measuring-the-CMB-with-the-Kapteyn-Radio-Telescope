@@ -50,6 +50,4 @@ The Kapteyn Radio Telescope is an 11 GHz radio telescope designed to measure the
 
 ## License
 
-This project is licensed under the **All Rights Reserved** license. You can view the full license text in the [LICENSE](./LICENSE) file.
-
-No part of this repository may be copied, modified, or distributed without explicit permission from the copyright holder.
+While this project is licensed under the "All Rights Reserved" license, TAs are granted permission to view the code exclusively for the purpose of grading this report. No part of this repository may be copied, modified, or distributed without explicit permission from the copyright holder.
