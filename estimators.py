@@ -3,13 +3,15 @@ import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 from typing import Callable, Any
 
+from utils import Uncertainties
+
 
 T_C = 77.36  # K +- 0.01
 T_H = 275  # K +- 0.5
 T_ATM = 275  # K +- 0.5
 
 
-class CMBEstimator:
+class CMBEstimator(Uncertainties):
     """
     CMB and thao_0 esimator for data without a satelite.
     """
@@ -39,7 +41,7 @@ class CMBEstimator:
         """
         angles_1, powers = self._preprocess_data()
 
-        t_ant, t_sys, t_rec = self._get_relevant_temperatures(powers)
+        t_ant, t_ant_error = self._get_relevant_temperatures(powers)
 
         popt, pcov_diag = self._fit_model(
             self._antena_model, initial_guesses, angles_1[:slicing], t_ant[:slicing]
@@ -48,7 +50,14 @@ class CMBEstimator:
         t_cmb = tuple((popt[0], pcov_diag[0]))
         thao_0 = tuple((popt[1], pcov_diag[1]))
 
-        self._plot_fit(self._antena_model, t_ant, popt, pcov_diag, slicing)
+        self._plot_fit(self._antena_model, t_ant, t_ant_error, popt, pcov_diag, slicing)
+
+        # Prints the CMB temperature and tau_0
+        print(f"T_cmb = {popt[0]} \\pm {pcov_diag[0]}")
+        print(f"tau_0 = {popt[1]} \\pm {pcov_diag[1]}")
+
+        # Prints the slicing
+        print(f"Applied slicing: {slicing}")
 
         return t_cmb, thao_0
 
@@ -65,19 +74,27 @@ class CMBEstimator:
         :return: np.ndarray
         :rtype: tuple[np.ndarray, np.ndarray, float]
         """
-        g_cal = self._estimate_g_cal()
+        g_cal, g_cal_error = self._estimate_g_cal()
 
-        t_rec = self._estimate_t_rec()
+        t_rec, t_rec_error = self._estimate_t_rec()
 
-        t_sys = self._estimate_t_sys(g_cal, powers)
+        t_sys, t_sys_error = self._estimate_t_sys(g_cal, powers, g_cal_error)
 
-        t_ant = self._generate_t_ant_data(t_sys, t_rec)
-        return t_ant, t_sys, t_rec
+        t_ant, t_ant_error = self._generate_t_ant_data(
+            t_sys, t_rec, t_sys_error, t_rec_error
+        )
+
+        # Prints the calibration constant and the temperature of the reciever
+        print(f"G_cal = {g_cal} \\pm {g_cal_error}")
+        print(f"T_rec = {t_rec} \\pm {t_rec_error}")
+
+        return t_ant, t_ant_error
 
     def _plot_fit(
         self,
         model: Callable[..., Any],
         data_y: np.ndarray,
+        data_y_errors: np.ndarray,
         popt: list[float],
         pcov_diag: list[float],
         slicing: int | None,
@@ -92,6 +109,9 @@ class CMBEstimator:
         :param data_y: the data used to fit the model,
         in this case the T_sys (system temperature)
         :type data_y: np.ndarray
+        :param data_y_errors: the error in the data used to fit the model,
+        in this case the error of T_sys (system temperature)
+        :type data_y_errors: np.ndarray
         :param popt: the fitted parameters
         :type popt: list[float]
         :param pcov_diag: the errors of the fitted parameters
@@ -107,6 +127,7 @@ class CMBEstimator:
         model_x = data_x[:slicing]
         data_x = data_x[:slicing]
         data_y = data_y[:slicing]
+        data_y_errors = data_y_errors[:slicing]
 
         model_y = model(model_x, *popt)
 
@@ -118,8 +139,16 @@ class CMBEstimator:
             f"\n thao_0 = {round(popt[1],2)}\u00b1{round(pcov_diag[1]):.2f}",
             color="red",
         )
-        ax.scatter(
-            data_x, data_y, label="Data from Kapteyn Radio Telescope", color="blue"
+        ax.errorbar(
+            data_x,
+            data_y,
+            yerr=data_y_errors,
+            capsize=5,
+            ecolor="black",
+            elinewidth=1,
+            fmt="o",
+            label="Data from Kapteyn Radio Telescope",
+            color="blue",
         )
         ax.set_title(title)
         ax.set_xlabel("Andles (deg)")
@@ -154,18 +183,21 @@ class CMBEstimator:
         p_max = (self._powers[1] + self._powers[-2]) / 2
         return p_max, p_min
 
-    def _estimate_g_cal(self) -> float:
+    def _estimate_g_cal(self) -> tuple[float, float]:
         """
         Estimates the G calibration.
 
-        :return: the G calibration
-        :rtype: float
+        :return: the G calibration and its error
+        :rtype: tuple[float,float]
         """
         p_max, p_min = self._hot_and_cold_power()
         g_cal = (p_max - p_min) / (T_H - T_C)
-        return g_cal
+        g_cal_error_ = self._g_cal_error(T_H, T_C, p_max, p_min, 0.5, 0.01)
+        return g_cal, g_cal_error_
 
-    def _estimate_t_sys(self, g_cal: float, power_watt: np.ndarray) -> np.ndarray:
+    def _estimate_t_sys(
+        self, g_cal: float, power_watt: np.ndarray, g_cal_error: float
+    ) -> tuple[np.ndarray, np.ndarray]:
         """
         Estimates the temperature of the system.
 
@@ -173,25 +205,29 @@ class CMBEstimator:
         :type g_cal: float
         :param power_watt: the power in watts after preprocessing
         :type power_watt: np.ndarray
-        :return: the estsimate T sys at the different points
-        :rtype: np.ndarray
+        :return: the estsimate T sys at the different points and its errors
+        :rtype: tuple[np.ndarray,np.ndarray]
         """
         t_sys = power_watt / g_cal
-        return t_sys
+        t_sys_error_ = self._t_sys_error(power_watt, g_cal_error, g_cal)
+        return t_sys, t_sys_error_
 
-    def _estimate_t_rec(self) -> float:
+    def _estimate_t_rec(self) -> tuple[float, float]:
         """
         Estimates the temperature of the reciever.
 
-        :return: the T_rec
-        :rtype: float
+        :return: the T_rec and its error
+        :rtype: tuple[float, float]
         """
         p_max, p_min = self._hot_and_cold_power()
         y = p_max / p_min
         t_rec = (T_H - y * T_C) / (y - 1)
-        return t_rec
+        t_rec_error_ = self._t_rec_error(y, 0.5, 0.01)
+        return t_rec, t_rec_error_
 
-    def _generate_t_ant_data(self, t_sys: np.ndarray, t_rec) -> np.ndarray:
+    def _generate_t_ant_data(
+        self, t_sys: np.ndarray, t_rec, t_sys_error: np.ndarray, t_rec_error: float
+    ) -> tuple[np.ndarray, np.ndarray]:
         """
         Generates the data for the temperature of the antena.
 
@@ -199,11 +235,12 @@ class CMBEstimator:
         :type t_sys: np.ndarray
         :param t_rec: the temperature of the reciever
         :type t_rec: _type_
-        :return: the data for the T_ant
-        :rtype: np.ndarray
+        :return: the data for the T_ant and the errors
+        :rtype: tuple[np.ndarray,np.ndarray]
         """
         t_ant = t_sys - t_rec
-        return t_ant
+        t_ant_error_ = self._t_ant_error(t_sys_error, t_rec_error)
+        return t_ant, t_ant_error_
 
     def _preprocess_data(self) -> tuple[np.ndarray, np.ndarray]:
         """
@@ -301,13 +338,14 @@ class CMBEstimatorWithSatelite(CMBEstimator):
         angles, powers = self._preprocess_data()
 
         # Get the relevant temperatures
-        t_ant, _, _ = self._get_relevant_temperatures(powers)
+        t_ant, t_ant_error = self._get_relevant_temperatures(powers)
 
         # Make an initial antena fit on the sliced data
         popt, pcov_diag = self._antena_fit(
             initial_guesses_antena,
             angles,
             t_ant,
+            t_ant_error,
             slicing,
             title="Data from Kapteyn Radio Telescope with the itital antena model\n(before satelite data removal)",
         )
@@ -318,7 +356,7 @@ class CMBEstimatorWithSatelite(CMBEstimator):
 
         # Fit a gaussian to the reduced antena temperature to model the satelite
         popt_gauss, _ = self._gaussian_fit(
-            initial_guesses_gaussian, angles, t_ant_decreased, t_ant
+            initial_guesses_gaussian, angles, t_ant_decreased, t_ant, t_ant_error
         )
 
         # Remove the contributions from the satelite from the initial data
@@ -329,6 +367,7 @@ class CMBEstimatorWithSatelite(CMBEstimator):
             initial_guesses_antena,
             angles,
             t_ant,
+            t_ant_error,
             slicing,
             title="Data from Kapteyn Radio Telescope with the antena model\n(after satelite data removal)",
         )
@@ -337,6 +376,13 @@ class CMBEstimatorWithSatelite(CMBEstimator):
         t_cmb = tuple((popt[0], pcov_diag[0]))
         thao_0 = tuple((popt[1], pcov_diag[1]))
 
+        # Print the CMB temperature an tau_0
+        print(f"T_cmb = {popt[0]} \\pm {pcov_diag[0]}")
+        print(f"tau_0 = {popt[1]} \\pm {pcov_diag[1]}")
+
+        # Prints the slicing
+        print(f"Applied slicing: {slicing}")
+
         return t_cmb, thao_0
 
     def _antena_fit(
@@ -344,6 +390,7 @@ class CMBEstimatorWithSatelite(CMBEstimator):
         initial_guesses_antena: list[float],
         angles: np.ndarray,
         t_ant: np.ndarray,
+        t_ant_error: np.ndarray,
         slicing: int,
         title: str,
     ) -> list[float]:
@@ -357,6 +404,8 @@ class CMBEstimatorWithSatelite(CMBEstimator):
         :type angles: np.ndarray
         :param t_ant: the antena temperatures
         :type t_ant: np.ndarray
+        :param t_ant_error: the error in the antena temperatures
+        :type t_ant_error: np.ndarray
         :param slicing: the slicing of the data
         :type slicing: int
         :param title: the title of the plot
@@ -373,7 +422,9 @@ class CMBEstimatorWithSatelite(CMBEstimator):
         )
 
         # Plot the antena fit
-        self._plot_fit(self._antena_model, t_ant, popt, pcov_diag, slicing, title)
+        self._plot_fit(
+            self._antena_model, t_ant, t_ant_error, popt, pcov_diag, slicing, title
+        )
 
         return popt, pcov_diag
 
@@ -383,6 +434,7 @@ class CMBEstimatorWithSatelite(CMBEstimator):
         angles: np.ndarray,
         t_ant_decreased: np.ndarray,
         t_ant: np.ndarray,
+        t_ant_error: np.ndarray,
     ) -> list[float]:
         """
         Perform the gaussian fit used to model the satelite contribution
@@ -398,6 +450,8 @@ class CMBEstimatorWithSatelite(CMBEstimator):
         :type t_ant_decreased: np.ndarray
         :param t_ant: the antena temperature
         :type t_ant: np.ndarray
+        :param t_ant_error: the error in the antena temperature
+        :type t_ant_error: np.ndarray
         :return: the fitted gaussian parameters
         :rtype: list[float]
         """
@@ -417,11 +471,13 @@ class CMBEstimatorWithSatelite(CMBEstimator):
         popt_gauss[0] *= np.max(t_ant)
 
         # Plot the gaussian fit
-        self._plot_gaussian_fit(t_ant_decreased, popt_gauss)
+        self._plot_gaussian_fit(t_ant_decreased, t_ant_error, popt_gauss)
 
         return popt_gauss, pcov_gauss_diag
 
-    def _plot_gaussian_fit(self, data_y: np.ndarray, popt: list[float]):
+    def _plot_gaussian_fit(
+        self, data_y: np.ndarray, data_y_errors: np.ndarray, popt: list[float]
+    ):
         """
         Used to plot tha gaussian fit that models the sateilte
         in the data.
@@ -439,8 +495,16 @@ class CMBEstimatorWithSatelite(CMBEstimator):
         y_gaussian = self._gaussian_model(x_gaussian, *popt)
 
         ax.plot(x_gaussian, y_gaussian, label="Gaussian fit", color="red")
-        ax.scatter(
-            data_x, data_y, label="Data from Kapteyn Radio Telescope", color="blue"
+        ax.errorbar(
+            data_x,
+            data_y,
+            yerr=data_y_errors,
+            capsize=5,
+            ecolor="black",
+            elinewidth=1,
+            fmt="o",
+            label="Data from Kapteyn Radio Telescope",
+            color="blue",
         )
         ax.set_title("Data from Kapteyn Radio Telescope with the fitted Gaussian model")
         ax.set_xlabel("Andles (deg)")
