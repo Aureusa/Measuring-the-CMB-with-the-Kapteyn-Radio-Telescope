@@ -383,7 +383,6 @@ class CMBEstimatorWithSatelite(CMBEstimator):
 
         # Get the relevant temperatures
         t_ant, t_ant_error = self._get_relevant_temperatures(powers)
-        popt, pcov_diag = tuple((1,1))
 
         # Make an initial antena fit on the sliced data
         popt, pcov_diag = self._antena_fit(
