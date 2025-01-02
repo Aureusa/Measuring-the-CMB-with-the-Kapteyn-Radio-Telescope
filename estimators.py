@@ -80,8 +80,8 @@ class CMBEstimator(Uncertainties):
             model1=self._cmb_temp_model,
             popt1=popt,
             model2=self._atmosphere_temp_model,
-            popt2=[popt[1]]
-            )
+            popt2=[popt[1]],
+        )
 
         # Prints the CMB temperature and tau_0
         print(f"T_cmb = {popt[0]} \\pm {pcov_diag[0]}")
@@ -737,12 +737,19 @@ class CMBEstimatorWithSatelite(CMBEstimator):
         popt_gauss[0] *= np.max(t_ant_decreased)
 
         # Plot the gaussian fit
-        self._plot_gaussian_fit(angles, t_ant_decreased, t_ant_error, popt_gauss)
+        self._plot_gaussian_fit(
+            angles, t_ant_decreased, t_ant_error, popt_gauss, pcov_gauss_diag
+        )
 
         return popt_gauss, pcov_gauss_diag
 
     def _plot_gaussian_fit(
-        self, data_x, data_y: np.ndarray, data_y_errors: np.ndarray, popt: list[float]
+        self,
+        data_x,
+        data_y: np.ndarray,
+        data_y_errors: np.ndarray,
+        popt: list[float],
+        pcov_gauss_diag: list[float],
     ):
         """
         Used to plot tha gaussian fit that models the sateilte
@@ -770,12 +777,74 @@ class CMBEstimatorWithSatelite(CMBEstimator):
             label="Antena Temperature ",
             color="blue",
         )
+
+        fwhm, fwhm_error, fwhm_temp, x_big, x_small = self._calculate_fwhm(
+            popt, pcov_gauss_diag, y_gaussian, x_gaussian
+        )
+
+        ax.hlines(
+            y=fwhm_temp,
+            xmin=x_small,
+            xmax=x_big,
+            color="green",
+            linestyle="--",
+            label=f"FWHM = {round(fwhm,2):.2f}\u00b1{round(fwhm_error,2):.2f}",
+        )
+
         ax.set_title("Antena temperature with the fitted Gaussian model")
         ax.set_xlabel("Angles (deg)")
         ax.set_ylabel("Temperature (K)")
         ax.legend()
 
         plt.show()
+
+    def _calculate_fwhm(
+        self,
+        popt: list[float],
+        pcov_gauss_diag: list[float],
+        y_gaussian: np.ndarray,
+        x_gaussian: np.ndarray,
+    ) -> tuple[float, float, float, float, float]:
+        """
+        Calculates the Full Width at Half Maximum (FWHM) of a
+        Gaussian function based on the provided parameters.
+
+        The function identifies the range where the Gaussian function
+        intersects the half-maximum value
+        and calculates the FWHM, along with the associated uncertainty.
+
+        :param popt: Optimized parameters from the Gaussian fit.
+        :type popt: list[float]
+        :param pcov_gauss_diag: Diagonal of the covariance matrix,
+        providing uncertainty estimates for the parameters.
+        :type pcov_gauss_diag: list[float]
+        :param y_gaussian: The values of the Gaussian function at the corresponding x-values.
+        :type y_gaussian: np.ndarray
+        :param x_gaussian: The x-values (e.g., positions or angles)
+        corresponding to the y-values of the Gaussian.
+        :type x_gaussian: np.ndarray
+        :return: FWHM value, its associated error, the approximate FWHM center,
+        and the x-values corresponding to the lower and upper bounds of FWHM.
+        :rtype: tuple[float,float,float,float,float]
+        """
+        # Defining an upper and a lower bound for the range of intercept
+        delta = 0.55
+        fwhm_temp = popt[0] / 2 + popt[3]
+        upper_bound = fwhm_temp + delta
+        lower_bound = fwhm_temp - delta
+
+        # Finding the intercept
+        indecies = np.where((y_gaussian > lower_bound) & (y_gaussian < upper_bound))[0]
+        x_small = x_gaussian[indecies[0]]
+        x_big = x_gaussian[indecies[1]]
+
+        # Calculating the FWHM
+        fwhm = x_big - x_small
+        fwhm_error = 2.35482 * pcov_gauss_diag[2]
+
+        print(f"FWHM = {fwhm} \\pm {fwhm_error}")
+
+        return fwhm, fwhm_error, fwhm_temp, x_big, x_small
 
     @staticmethod
     def _gaussian_model(
