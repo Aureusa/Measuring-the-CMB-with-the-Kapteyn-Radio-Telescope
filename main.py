@@ -31,7 +31,7 @@ def main_satelite():
 
     estimator.plot_antena()
 
-    estimator.get_estimate([3, 0.1], [1.0, 65, 20, 0.0], -12)
+    estimator.get_estimate([3, 0.1], [1.0, 65, 10, 0.0], -12)
 
 
 if __name__ == "__main__":

@@ -50,8 +50,38 @@ class CMBEstimator(Uncertainties):
         t_cmb = tuple((popt[0], pcov_diag[0]))
         thao_0 = tuple((popt[1], pcov_diag[1]))
 
-        self._plot_fit(self._antena_model, t_ant, t_ant_error, popt, pcov_diag, slicing, fit = False, title=f"The antena temperature with the last {-slicing} points discarded.")
-        self._plot_fit(self._antena_model, t_ant, t_ant_error, popt, pcov_diag, slicing, fit = True, title="The antena temperature with the fitted antena model.")
+        self._plot_fit(
+            self._antena_model,
+            t_ant,
+            t_ant_error,
+            popt,
+            pcov_diag,
+            slicing,
+            fit=False,
+            title=f"The antena temperature with the last {-slicing} points discarded.",
+        )
+        self._plot_fit(
+            self._antena_model,
+            t_ant,
+            t_ant_error,
+            popt,
+            pcov_diag,
+            slicing,
+            fit=True,
+            title="The antena temperature with the fitted antena model.",
+        )
+
+        self._plot_antena_temperature_(
+            angles,
+            t_ant,
+            t_ant_error,
+            title="The contribution of both the CMB and the atmosphere\nto the antena temperature",
+            fit=True,
+            model1=self._cmb_temp_model,
+            popt1=popt,
+            model2=self._atmosphere_temp_model,
+            popt2=[popt[1]]
+            )
 
         # Prints the CMB temperature and tau_0
         print(f"T_cmb = {popt[0]} \\pm {pcov_diag[0]}")
@@ -90,25 +120,74 @@ class CMBEstimator(Uncertainties):
         print(f"T_rec = {t_rec} \\pm {t_rec_error}")
 
         return t_ant, t_ant_error
-    
-    def plot(self, t_ant):
-        angles, _ = self._preprocess_data()
-
-        _, ax = plt.subplots()
-
-        ax.scatter(angles, t_ant, color="blue", label="Antena temperature in terms of angles")
-        ax.set_xlabel("Angles (deg)")
-        ax.set_ylabel("Temperature (K)")
-        ax.set_title("Antena temperature in terms of angles")
-        ax.legend()
-
-        plt.show()
 
     def plot_antena(self):
+        """
+        Plots the antenna temperature as a function of angles by preprocessing
+        the data and retrieving the relevant temperature values.
+
+        This function preprocesses the data using `_preprocess_data`,
+        retrieves the relevant antenna temperatures and their errors using
+        `_get_relevant_temperatures`, and then
+        calls `_plot_antena_temperature_` to generate the plot.
+        """
         angles, powers = self._preprocess_data()
 
         t_ant, t_ant_error = self._get_relevant_temperatures(powers)
 
+        self._plot_antena_temperature_(angles, t_ant, t_ant_error)
+
+    def _plot_antena_temperature_(
+        self,
+        angles,
+        t_ant,
+        t_ant_error,
+        title: str = "Antena temperature in terms of angles",
+        fit: bool = False,
+        model1: Callable[..., Any] | None = None,
+        popt1: list[float] | None = None,
+        model2: Callable[..., Any] | None = None,
+        popt2: list[float] | None = None,
+        model3: Callable[..., Any] | None = None,
+        popt3: list[float] | None = None,
+    ):
+        """
+        Plots the antenna temperature as a function of angles,
+        with optional error bars and model fits.
+
+        :param angles: Array of angles (in degrees) at which the
+        antenna temperature is measured.
+        :type angles: np.ndarray
+        :param t_ant: Measured antenna temperatures at the
+        corresponding angles.
+        :type t_ant: np.ndarray
+        :param t_ant_error: Error values associated with the
+        antenna temperature measurements.
+        :type t_ant_error: np.ndarray
+        :param title: The title of the plot
+        (default is "Antena temperature in terms of angles").
+        :type title: str, optional
+        :param fit: If True, will add fitted models to the plot.
+        :type fit: bool, optional
+        :param model1: The first model function to fit and plot,
+        or None if no model is provided.
+        :type model1: Callable[..., Any] | None, optional
+        :param popt1: The optimized parameters for the first model,
+        or None if no model is provided.
+        :type popt1: list[float] | None, optional
+        :param model2: The second model function to fit and plot,
+        or None if no model is provided.
+        :type model2: Callable[..., Any] | None, optional
+        :param popt2: The optimized parameters for the second model,
+        or None if no model is provided.
+        :type popt2: list[float] | None, optional
+        :param model3: The third model function to fit and plot,
+        or None if no model is provided.
+        :type model3: Callable[..., Any] | None, optional
+        :param popt3: The optimized parameters for the third model,
+        or None if no model is provided.
+        :type popt3: list[float] | None, optional
+        """
         _, ax = plt.subplots()
 
         ax.errorbar(
@@ -122,12 +201,83 @@ class CMBEstimator(Uncertainties):
             label="Antena temperature",
             color="blue",
         )
+
+        if fit:
+            self._add_fits_to_plot(
+                ax, angles, model1, popt1, model2, popt2, model3, popt3
+            )
+
         ax.set_xlabel("Angles (deg)")
         ax.set_ylabel("Temperature (K)")
-        ax.set_title("Antena temperature in terms of angles")
+        ax.set_title(title)
         ax.legend()
 
         plt.show()
+
+    def _add_fits_to_plot(
+        self,
+        ax,
+        angles: np.ndarray,
+        model1: Callable[..., Any] | None = None,
+        popt1: list[float] | None = None,
+        model2: Callable[..., Any] | None = None,
+        popt2: list[float] | None = None,
+        model3: Callable[..., Any] | None = None,
+        popt3: list[float] | None = None,
+    ) -> None:
+        """
+        Adds fitted models to a plot based on the provided angle
+        data and model parameters.
+
+        :param ax: The matplotlib axis object to which the fitted
+        models will be plotted.
+        :type ax: matplotlib.axes.Axes
+        :param angles: Array of angles at which the models are evaluated.
+        :type angles: np.ndarray
+        :param model1: The first model function to fit and plot,
+        or None if no model is provided.
+        :type model1: Callable[..., Any] | None
+        :param popt1: The optimized parameters for the first model,
+        or None if no model is provided.
+        :type popt1: list[float] | None
+        :param model2: The second model function to fit and plot,
+        or None if no model is provided.
+        :type model2: Callable[..., Any] | None
+        :param popt2: The optimized parameters for the second model,
+        or None if no model is provided.
+        :type popt2: list[float] | None
+        :param model3: The third model function to fit and plot,
+        or None if no model is provided.
+        :type model3: Callable[..., Any] | None
+        :param popt3: The optimized parameters for the third model,
+        or None if no model is provided.
+        :type popt3: list[float] | None
+        """
+        angles = np.linspace(angles.min(), angles.max(), 500)
+        if model1 is not None:
+            model_y = model1(angles, *popt1)
+            ax.plot(
+                angles,
+                model_y,
+                label=f"CMB contribution\nT_cmb = {popt1[0]:.2f}",
+                color="orange",
+            )
+        if model2 is not None:
+            model_y = model2(angles, *popt2)
+            ax.plot(
+                angles,
+                model_y,
+                label="Atmoshpere Contribution",
+                color="green",
+            )
+        if model3 is not None:
+            model_y = model3(angles, *popt3)
+            ax.plot(
+                angles,
+                model_y,
+                label="Satellite Contribution",
+                color="red",
+            )
 
     def _plot_fit(
         self,
@@ -356,6 +506,47 @@ class CMBEstimator(Uncertainties):
         )
         return popt, np.diag(pcov).tolist()
 
+    def _cmb_temp_model(
+        self, angles: np.ndarray, t_cmb: float, thao: float
+    ) -> np.ndarray:
+        """
+        Models the Cosmic Microwave Background (CMB) temperature
+        based on the zenith angle and atmospheric conditions.
+
+        :param angles: Array of angles (in degrees) from the zenith direction.
+        :type angles: np.ndarray
+        :param t_cmb: Temperature of the Cosmic Microwave Background (CMB)
+        at the zenith angle.
+        :type t_cmb: float
+        :param thao: Atmospheric opacity or thickness, affecting the
+        temperature distribution.
+        :type thao: float
+        :return: Modeled temperature of the CMB at the given angles.
+        :rtype: np.ndarray
+        """
+        zenith_angle = angles - 90
+        z = np.radians(zenith_angle)
+        t_cmb_modeled = t_cmb * np.exp(-thao / np.cos(z))
+        return t_cmb_modeled
+
+    def _atmosphere_temp_model(self, angles: np.ndarray, thao: float) -> np.ndarray:
+        """
+        Models the atmospheric temperature based on the zenith
+        angle and atmospheric opacity.
+
+        :param angles: Array of angles (in degrees) from the zenith direction.
+        :type angles: np.ndarray
+        :param thao: Atmospheric opacity or thickness, affecting the
+        temperature distribution.
+        :type thao: float
+        :return: Modeled temperature of the atmosphere at the given angles.
+        :rtype: np.ndarray
+        """
+        zenith_angle = angles - 90
+        z = np.radians(zenith_angle)
+        t_atm_modeled = T_ATM * (1 - np.exp(-thao / np.cos(z)))
+        return t_atm_modeled
+
 
 class CMBEstimatorWithSatelite(CMBEstimator):
     """
@@ -374,6 +565,9 @@ class CMBEstimatorWithSatelite(CMBEstimator):
         :param initial_guesses: the initial guess in the form:
         [cmb_temp, thao]
         :type initial_guesses: list[float]
+        :param initial_guesses_gaussian: the initial guess in the form:
+        [amp, mu, sigma, offset]
+        :type initial_guesses_gaussian: list[float]
         :param slicing: the slicing to be applied to the data to discard
         big angles. Recomended value = -5.
         :type slicing: int
@@ -384,34 +578,41 @@ class CMBEstimatorWithSatelite(CMBEstimator):
         # Get the relevant temperatures
         t_ant, t_ant_error = self._get_relevant_temperatures(powers)
 
-        # Make an initial antena fit on the sliced data
-        popt, pcov_diag = self._antena_fit(
-            initial_guesses_antena,
-            angles,
-            t_ant,
-            t_ant_error,
-            slicing
-        )
-
-        # Remove antena signal
-        modeled_values = self._antena_model(angles, *popt)
-        t_ant_decreased = t_ant - modeled_values
-
-        # Fit a gaussian to the reduced antena temperature to model the satelite
+        # Fit a gaussian to the antena temperature in order to model the satelite
         popt_gauss, _ = self._gaussian_fit(
-            initial_guesses_gaussian, angles, t_ant_decreased, t_ant, t_ant_error
+            initial_guesses_gaussian, angles, t_ant, t_ant, t_ant_error
         )
 
         # Remove the contributions from the satelite from the initial data
         modeled_values = self._gaussian_model(angles, *popt_gauss)
-        t_ant -= modeled_values
+        t_ant_decreased = t_ant - modeled_values
 
+        # Plot the antena after satelite removal
+        self._plot_antena_temperature_(
+            angles,
+            t_ant_decreased,
+            t_ant_error,
+            title="Antena temperature after removing the contribution from the satellite",
+        )
+
+        # Fit the antena model to the decreased antena temperature
         popt, pcov_diag = self._antena_fit(
-            initial_guesses_antena,
+            initial_guesses_antena, angles, t_ant_decreased, t_ant_error, slicing - 1
+        )
+
+        # Plot the initial antena temperature with the different contributions
+        self._plot_antena_temperature_(
             angles,
             t_ant,
             t_ant_error,
-            slicing
+            title="The contribution from the CMB, the atmosphere, and the satellite\nto the antena temperature",
+            fit=True,
+            model1=self._cmb_temp_model,
+            popt1=popt,
+            model2=self._atmosphere_temp_model,
+            popt2=[popt[1]],
+            model3=self._gaussian_model,
+            popt3=popt_gauss,
         )
 
         # Get the final results for the T_cmb and thao_0 with their uncertainties
@@ -433,7 +634,7 @@ class CMBEstimatorWithSatelite(CMBEstimator):
         angles: np.ndarray,
         t_ant: np.ndarray,
         t_ant_error: np.ndarray,
-        slicing: int
+        slicing: int,
     ) -> list[float]:
         """
         Makes an initial antena fit by removing the ignoring the data points
@@ -464,12 +665,26 @@ class CMBEstimatorWithSatelite(CMBEstimator):
 
         # Plot the sliced antena temperatures
         self._plot_fit(
-            self._antena_model, t_ant, t_ant_error, popt, pcov_diag, slicing, fit=False, title=f"The antena temperature with the last {-slicing} points discarded."
+            self._antena_model,
+            t_ant,
+            t_ant_error,
+            popt,
+            pcov_diag,
+            slicing,
+            fit=False,
+            title=f"The antena temperature with the last {-slicing} points discarded.",
         )
 
         # Plot the antena fit
         self._plot_fit(
-            self._antena_model, t_ant, t_ant_error, popt, pcov_diag, slicing, fit=True, title="The antena temperature with the fitted antena model."
+            self._antena_model,
+            t_ant,
+            t_ant_error,
+            popt,
+            pcov_diag,
+            slicing,
+            fit=True,
+            title="The antena temperature with the fitted antena model.",
         )
 
         return popt, pcov_diag
@@ -501,10 +716,15 @@ class CMBEstimatorWithSatelite(CMBEstimator):
         :return: the fitted gaussian parameters
         :rtype: list[float]
         """
+        # Remove the last point from the data for a better fit
+        t_ant_decreased = t_ant_decreased[:-1]
+        angles = angles[:-1]
+        t_ant_error = t_ant_error[:-1]
+
         # Scale the antena signal down
         t_ant_scaled = t_ant_decreased / np.max(t_ant_decreased)
 
-        # Fit a gaussian to the data
+        # Fit a gaussian to the down scaled signal
         popt_gauss, pcov_gauss_diag = self._fit_model(
             self._gaussian_model,
             initial_guesses_gaussian,
@@ -513,16 +733,16 @@ class CMBEstimatorWithSatelite(CMBEstimator):
             method="trf",
         )
 
-        # Rescale the gaussian fit up
-        popt_gauss[0] *= np.max(t_ant)
+        # Upscale the gaussian fit
+        popt_gauss[0] *= np.max(t_ant_decreased)
 
         # Plot the gaussian fit
-        self._plot_gaussian_fit(t_ant_decreased, t_ant_error, popt_gauss)
+        self._plot_gaussian_fit(angles, t_ant_decreased, t_ant_error, popt_gauss)
 
         return popt_gauss, pcov_gauss_diag
 
     def _plot_gaussian_fit(
-        self, data_y: np.ndarray, data_y_errors: np.ndarray, popt: list[float]
+        self, data_x, data_y: np.ndarray, data_y_errors: np.ndarray, popt: list[float]
     ):
         """
         Used to plot tha gaussian fit that models the sateilte
@@ -534,8 +754,6 @@ class CMBEstimatorWithSatelite(CMBEstimator):
         :type popt: list[float]
         """
         _, ax = plt.subplots()
-
-        data_x = self._angles[2:-2]
 
         x_gaussian = np.linspace(data_x.min(), data_x.max(), 1000)
         y_gaussian = self._gaussian_model(x_gaussian, *popt)
