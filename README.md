@@ -3,6 +3,10 @@
 
 This repository contains code and data for the second assignment in the Introduction to Radio Astronomy course. The objective is to measure the temperature of the Cosmic Microwave Background (CMB) using the Kapteyn Radio Telescope.
 
+## Repository Status
+
+**This repository is archived. No further development or maintenance is planned. Contributions, issues, and pull requests are not being accepted.**
+
 ## Repository Contents
 
 - **CMB data/**: Directory containing observational data files.
