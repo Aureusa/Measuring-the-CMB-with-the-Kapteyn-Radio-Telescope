@@ -39,18 +39,19 @@ class CMBEstimator(Uncertainties):
         big angles. Recomended value = -5.
         :type slicing: int
         """
-        angles_1, powers = self._preprocess_data()
+        angles, powers = self._preprocess_data()
 
         t_ant, t_ant_error = self._get_relevant_temperatures(powers)
 
         popt, pcov_diag = self._fit_model(
-            self._antena_model, initial_guesses, angles_1[:slicing], t_ant[:slicing]
+            self._antena_model, initial_guesses, angles[:slicing], t_ant[:slicing]
         )
 
         t_cmb = tuple((popt[0], pcov_diag[0]))
         thao_0 = tuple((popt[1], pcov_diag[1]))
 
-        self._plot_fit(self._antena_model, t_ant, t_ant_error, popt, pcov_diag, slicing)
+        self._plot_fit(self._antena_model, t_ant, t_ant_error, popt, pcov_diag, slicing, fit = False, title=f"The antena temperature with the last {-slicing} points discarded.")
+        self._plot_fit(self._antena_model, t_ant, t_ant_error, popt, pcov_diag, slicing, fit = True, title="The antena temperature with the fitted antena model.")
 
         # Prints the CMB temperature and tau_0
         print(f"T_cmb = {popt[0]} \\pm {pcov_diag[0]}")
@@ -89,6 +90,44 @@ class CMBEstimator(Uncertainties):
         print(f"T_rec = {t_rec} \\pm {t_rec_error}")
 
         return t_ant, t_ant_error
+    
+    def plot(self, t_ant):
+        angles, _ = self._preprocess_data()
+
+        _, ax = plt.subplots()
+
+        ax.scatter(angles, t_ant, color="blue", label="Antena temperature in terms of angles")
+        ax.set_xlabel("Angles (deg)")
+        ax.set_ylabel("Temperature (K)")
+        ax.set_title("Antena temperature in terms of angles")
+        ax.legend()
+
+        plt.show()
+
+    def plot_antena(self):
+        angles, powers = self._preprocess_data()
+
+        t_ant, t_ant_error = self._get_relevant_temperatures(powers)
+
+        _, ax = plt.subplots()
+
+        ax.errorbar(
+            angles,
+            t_ant,
+            yerr=t_ant_error,
+            capsize=5,
+            ecolor="black",
+            elinewidth=1,
+            fmt="o",
+            label="Antena temperature",
+            color="blue",
+        )
+        ax.set_xlabel("Angles (deg)")
+        ax.set_ylabel("Temperature (K)")
+        ax.set_title("Antena temperature in terms of angles")
+        ax.legend()
+
+        plt.show()
 
     def _plot_fit(
         self,
@@ -98,6 +137,7 @@ class CMBEstimator(Uncertainties):
         popt: list[float],
         pcov_diag: list[float],
         slicing: int | None,
+        fit: bool = True,
         title: str = "Data from Kapteyn Radio Telescope with the fitted model",
     ):
         """
@@ -119,6 +159,10 @@ class CMBEstimator(Uncertainties):
         :param slicing: the slicing used to discard data close to
         the horizon
         :type slicing: int | None
+        :param fit: if True shows the Fit, defaults to True
+        :type fit: bool
+        :param title: the title of the plot
+        :type title: str
         """
         _, ax = plt.subplots()
 
@@ -129,16 +173,16 @@ class CMBEstimator(Uncertainties):
         data_y = data_y[:slicing]
         data_y_errors = data_y_errors[:slicing]
 
-        model_y = model(model_x, *popt)
-
-        ax.plot(
-            model_x,
-            model_y,
-            label="Modeled data:\n"
-            f"T_cmb = {round(popt[0],2)}\u00b1{round(pcov_diag[0],2)}  K"
-            f"\n thao_0 = {round(popt[1],2)}\u00b1{round(pcov_diag[1]):.2f}",
-            color="red",
-        )
+        if fit:
+            model_y = model(model_x, *popt)
+            ax.plot(
+                model_x,
+                model_y,
+                label="Modeled data:\n"
+                f"T_cmb = {round(popt[0],2)}\u00b1{round(pcov_diag[0],2)}  K"
+                f"\n thao_0 = {round(popt[1],2)}\u00b1{round(pcov_diag[1]):.2f}",
+                color="red",
+            )
         ax.errorbar(
             data_x,
             data_y,
@@ -147,12 +191,12 @@ class CMBEstimator(Uncertainties):
             ecolor="black",
             elinewidth=1,
             fmt="o",
-            label="Data from Kapteyn Radio Telescope",
+            label="Antena Temperature",
             color="blue",
         )
         ax.set_title(title)
         ax.set_xlabel("Andles (deg)")
-        ax.set_ylabel("Power (watt)")
+        ax.set_ylabel("Temperature (K)")
         ax.legend()
 
         plt.show()
@@ -339,6 +383,7 @@ class CMBEstimatorWithSatelite(CMBEstimator):
 
         # Get the relevant temperatures
         t_ant, t_ant_error = self._get_relevant_temperatures(powers)
+        popt, pcov_diag = tuple((1,1))
 
         # Make an initial antena fit on the sliced data
         popt, pcov_diag = self._antena_fit(
@@ -346,8 +391,7 @@ class CMBEstimatorWithSatelite(CMBEstimator):
             angles,
             t_ant,
             t_ant_error,
-            slicing,
-            title="Data from Kapteyn Radio Telescope with the itital antena model\n(before satelite data removal)",
+            slicing
         )
 
         # Remove antena signal
@@ -368,8 +412,7 @@ class CMBEstimatorWithSatelite(CMBEstimator):
             angles,
             t_ant,
             t_ant_error,
-            slicing,
-            title="Data from Kapteyn Radio Telescope with the antena model\n(after satelite data removal)",
+            slicing
         )
 
         # Get the final results for the T_cmb and thao_0 with their uncertainties
@@ -391,8 +434,7 @@ class CMBEstimatorWithSatelite(CMBEstimator):
         angles: np.ndarray,
         t_ant: np.ndarray,
         t_ant_error: np.ndarray,
-        slicing: int,
-        title: str,
+        slicing: int
     ) -> list[float]:
         """
         Makes an initial antena fit by removing the ignoring the data points
@@ -421,9 +463,14 @@ class CMBEstimatorWithSatelite(CMBEstimator):
             t_ant[:slicing],
         )
 
+        # Plot the sliced antena temperatures
+        self._plot_fit(
+            self._antena_model, t_ant, t_ant_error, popt, pcov_diag, slicing, fit=False, title=f"The antena temperature with the last {-slicing} points discarded."
+        )
+
         # Plot the antena fit
         self._plot_fit(
-            self._antena_model, t_ant, t_ant_error, popt, pcov_diag, slicing, title
+            self._antena_model, t_ant, t_ant_error, popt, pcov_diag, slicing, fit=True, title="The antena temperature with the fitted antena model."
         )
 
         return popt, pcov_diag
@@ -503,12 +550,12 @@ class CMBEstimatorWithSatelite(CMBEstimator):
             ecolor="black",
             elinewidth=1,
             fmt="o",
-            label="Data from Kapteyn Radio Telescope",
+            label="Antena Temperature ",
             color="blue",
         )
-        ax.set_title("Data from Kapteyn Radio Telescope with the fitted Gaussian model")
-        ax.set_xlabel("Andles (deg)")
-        ax.set_ylabel("Power (watt)")
+        ax.set_title("Antena temperature with the fitted Gaussian model")
+        ax.set_xlabel("Angles (deg)")
+        ax.set_ylabel("Temperature (K)")
         ax.legend()
 
         plt.show()

@@ -13,6 +13,8 @@ def main():
 
     estimator = CMBEstimator(angles, powers)
 
+    estimator.plot_antena()
+
     estimator.get_estimate([3, 0.1], -5)
 
 
@@ -26,6 +28,8 @@ def main_satelite():
     angles, powers = unpack_data("12.data160408_cmb.txt")
 
     estimator = CMBEstimatorWithSatelite(angles, powers)
+
+    estimator.plot_antena()
 
     estimator.get_estimate([3, 0.1], [1.0, 65, 20, 0.0], -12)
 
